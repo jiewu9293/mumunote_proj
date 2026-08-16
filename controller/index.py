@@ -38,6 +38,8 @@ def home():
 
         article.article_image = config[env].article_header_image_path + str(article.article_image)
 
+        article.article_tag = article.article_tag.replace(",", " · ")
+
     return render_template("index.html",result=db_result)
 
 
