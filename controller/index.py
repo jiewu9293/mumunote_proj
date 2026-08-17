@@ -40,6 +40,12 @@ def home():
 
         article.article_tag = article.article_tag.replace(",", " · ")
 
-    return render_template("index.html",result=db_result)
+    start_num = request.args.get("start_num")
+    if start_num is None:
+        start_num = 0
+    end_num = len(db_result)
+
+    return render_template("index.html",result=db_result,start_num=start_num,
+                           end_num=end_num)
 
 
