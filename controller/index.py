@@ -45,7 +45,13 @@ def home():
         start_num = 0
     end_num = len(db_result)
 
+    for k, v in label_types.items():
+        if article_type == k:
+            v["selected"] = "selected"
+        else:
+            v["selected"] = "np-selected"
+
     return render_template("index.html",result=db_result,start_num=start_num,
-                           end_num=end_num)
+                           end_num=end_num,label_types=label_types)
 
 
