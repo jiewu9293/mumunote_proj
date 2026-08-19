@@ -1,6 +1,6 @@
 import re
 import json
-from flask import Blueprint,request,make_response,session
+from flask import Blueprint,request,make_response,session,url_for
 import hashlib
 from common import response_message
 from common.email_utils import get_email_code, send_email
@@ -97,3 +97,14 @@ def login():
         return response
     else:
         return response_message.UserMessage.error("用户名或者是密码错误")
+
+@user.route("/logout")
+def logout():
+    # 清空session
+    session.clear()
+    response = make_response("注销并进行重定向", 302)
+    # 这里的url_for写的不是一个url地址,而是我们的控制器的模块名称.函数名称，然后映射到这个控制器处理函数的地址上
+    response.headers["Location"] = url_for("index.home")
+    # 清除掉cookie
+    response.delete_cookie("username")
+    return response
