@@ -51,3 +51,10 @@ class Article(Base):
 
     def get_article_detail(self, article_id):
        return db_session.query(Article).filter_by(id=article_id).first()
+
+    # 获取相关文章的数据
+    def find_about_article(self, label_name):
+        return db_session.query(Article).filter_by(
+            label_name=label_name).order_by(
+            Article.browse_num.desc()
+        ).limit(5)

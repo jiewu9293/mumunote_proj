@@ -21,7 +21,10 @@ def article_detail():
     user = User()
     user_info = user.find_by_userid(article_content.user_id)
 
+    # 相关文章的功能
+    about_article = article.find_about_article(article_content.label_name)
+
     is_favorite = 1
     return render_template("article_info.html",article_content=article_content,
                            user_info=user_info,is_favorite=is_favorite,
-                           article_tag_list=article_tag_list)
+                           article_tag_list=article_tag_list,about_article=about_article)
