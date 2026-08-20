@@ -25,7 +25,7 @@ def vcode():
 def email_code():
     email = json.loads(request.data).get("email")
 
-    if not re.match(".+@.+\..+", email):
+    if not re.match(r".+@.+\..+", email):
         return response_message.UserMessage.other("无效的邮箱")
 
     code = get_email_code()
@@ -52,7 +52,7 @@ def register():
     if ecode.lower() != session.get("ecode"):
         return response_message.UserMessage.error("邮箱验证码错误")
     # 用户名 和 密码的验证
-    if not re.match(".+@.+\..+", username):
+    if not re.match(r".+@.+\..+", username):
         return response_message.UserMessage.other("无效的邮箱")
 
     if len(password) < 6:
