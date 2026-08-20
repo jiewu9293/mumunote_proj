@@ -128,6 +128,8 @@ venv.bak/
 /site
 log/
 resource/
+template/article_info.html
+resource/css/article_info.css
 # mypy
 .mypy_cache/
 .dmypy.json
