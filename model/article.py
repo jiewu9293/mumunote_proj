@@ -49,4 +49,5 @@ class Article(Base):
         ).limit(count).all()
         return result
 
-
+    def get_article_detail(self, article_id):
+       return db_session.query(Article).filter_by(id=article_id).first()

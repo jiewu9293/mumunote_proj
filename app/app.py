@@ -1,5 +1,5 @@
 from flask import Flask
-import os 
+import os
 
 
 
@@ -15,3 +15,9 @@ def init_blueprint(app):
 
     from controller.index import index
     app.register_blueprint(index)
+
+    from controller.article import article
+    app.register_blueprint(article)
+
+    from controller.favorite import favorite
+    app.register_blueprint(favorite)
