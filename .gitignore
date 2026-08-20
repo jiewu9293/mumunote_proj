@@ -130,6 +130,7 @@ log/
 resource/
 template/article_info.html
 resource/css/article_info.css
+test_app.py
 # mypy
 .mypy_cache/
 .dmypy.json
