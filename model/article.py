@@ -50,7 +50,12 @@ class Article(Base):
         return result
 
     def get_article_detail(self, article_id):
-       return db_session.query(Article).filter_by(id=article_id).first()
+        result = db_session.query(Article).filter_by(id=article_id).first()
+
+        result.browse_num += 1
+
+        db_session.commit()
+        return result
 
     # 获取相关文章的数据
     def find_about_article(self, label_name):
