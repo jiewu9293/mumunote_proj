@@ -2,6 +2,7 @@ import random
 import string
 from PIL import Image, ImageFont, ImageDraw
 from io import BytesIO
+from datetime import datetime
 
 class ImageCode():
 
@@ -50,6 +51,27 @@ class ImageCode():
         image_b_string = buf.getvalue()
         return code, image_b_string
 
+def model_to_json(result):
+    dict = {}
+    for k, v in result.__dict__.items():
+        if not k.startswith("_sa_"):
+            if isinstance(v, datetime):
+                v = v.strftime("%Y-%m-%d %H:%M:%S")
+            dict[k] = v
+    return dict
+
+def compress_image(source, dest, width=1200):
+    im = Image.open(source)
+    # 获取图片的宽和高
+    x,y = im.size
+    if x>width:
+        #等比例缩放
+        ys = int(y * width / x)
+        xs = width
+        temp = im.resize((xs, ys), Image.ANTIALIAS)
+        temp.save(dest, quality=80)
+    else:
+        im.save(dest, quality=80)
 
 
 image_code = ImageCode()
