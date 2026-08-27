@@ -1,6 +1,6 @@
 import random
 
-from sqlalchemy import Table
+from sqlalchemy import Table, func
 
 from common.database import db_connect
 from config.config import config
@@ -87,6 +87,36 @@ class Feedback(Base):
             base_reply_id=0
         ).count()
         return result
+
+    # 插入一级评论
+    def insert_comment(self,user_id,article_id,content,ipaddr):
+        # label的意思就是重新起一个名字给字段
+        feedback_max_floor = db_session.query(
+            #给查询结果起一个临时名字 max_floor 方便这样 feedback_max_floor.max_floor
+            func.max(Feedback.floor_number).label("max_floor")
+        # 只查询当前文章的评论。
+        ).filter_by(article_id=article_id).first()
+        if feedback_max_floor.max_floor == 0 or feedback_max_floor.max_floor is None:
+            feedback = Feedback(user_id=user_id,
+                                article_id=article_id,
+                                content=content,
+                                ipaddr=ipaddr,
+                                floor_number=1,
+                                reply_id=0,
+                                base_reply_id=0)
+        else:
+            feedback = Feedback(user_id=user_id,
+                            article_id=article_id,
+                            content=content,
+                            ipaddr=ipaddr,
+                            floor_number=int(feedback_max_floor.max_floor) + 1,
+                            reply_id=0,
+                            base_reply_id=0)
+        db_session.add(feedback)
+        db_session.commit()
+        # 刚插入时有些值由数据库自动生成，refresh(feedback) 可以把这些值重新读取到 Python对象里。
+        # db_session.refresh()
+        return feedback
 
 
 

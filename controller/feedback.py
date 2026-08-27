@@ -4,10 +4,11 @@ import time
 from flask import Blueprint, render_template, request, session, make_response, jsonify
 
 from common import response_message
-from common.utils import compress_image
+from common.utils import compress_image, model_to_json
 from config.ue_config import FEEDBACK_UECONFIG
 
 from model.favorite import Favorite
+from model.feedback import Feedback
 
 feedback = Blueprint("feedback",__name__)
 
@@ -35,3 +36,30 @@ def ueditor():
         result["title"] = filename
         result["original"] = filename
         return jsonify(result)
+
+# 添加一个评论
+@feedback.route("/feedback/add",methods=['post'])
+def add():
+    #请求体 转字典
+    request_data = json.loads(request.data)
+    article_id = request_data.get("article_id")
+    content = request_data.get("content").strip()
+    #当前发表评论的人从哪个 IP 地址访问
+    ipaddr = request.remote_addr
+    user_id = session.get("user_id")
+
+    # 对内容进行校验
+    if len(content) < 5 or len(content) > 1000:
+        return response_message.FeedbackMessage.other("内容长度不符")
+
+    feedback = Feedback()
+    try:
+        result = feedback.insert_comment(user_id=user_id,
+                                         article_id=article_id,
+                                         content=content,
+                                         ipaddr=ipaddr)
+        result = model_to_json(result)
+        return response_message.FeedbackMessage.success("评论成功")
+    except Exception as e:
+        print(e)
+        return response_message.FeedbackMessage.error("评论失败")

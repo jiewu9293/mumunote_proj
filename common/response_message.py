@@ -50,3 +50,17 @@ class UserMessage():
         @staticmethod
         def other(data):
             return {"status": 3001, "data": data}
+
+    # 评论以4开头
+    class FeedbackMessage():
+        @staticmethod
+        def success(data):
+            return {"status": 4000, "data": data}
+
+        @staticmethod
+        def error(data):
+            return {"status": 4002, "data": data}
+
+        @staticmethod
+        def other(data):
+            return {"status": 4001, "data": data}
