@@ -63,3 +63,32 @@ def add():
     except Exception as e:
         print(e)
         return response_message.FeedbackMessage.error("评论失败")
+
+@feedback.route("/feedback/reply",methods=['post'])
+def reply():
+    request_data = json.loads(request.data)
+    article_id = request_data.get("article_id")
+    content = request_data.get("content").strip()
+    # 当前发表评论的人从哪个 IP 地址访问
+    ipaddr = request.remote_addr
+    user_id = session.get("user_id")
+    reply_id = request_data.get("reply_id")
+    base_reply_id = request_data.get("base_reply_id")
+
+    # 对内容进行校验
+    if len(content) < 5 or len(content) > 1000:
+        return response_message.FeedbackMessage.other("内容长度不符")
+
+    feedback = Feedback()
+    try:
+        result = feedback.insert_relpy(user_id=user_id,
+                            article_id=article_id,
+                            content=content,
+                            ipaddr=ipaddr,
+                            reply_id=reply_id,
+                            base_reply_id=base_reply_id)
+
+        return response_message.FeedbackMessage.success("评论成功")
+    except Exception as e:
+        print(e)
+        return response_message.FeedbackMessage.error("评论失败")

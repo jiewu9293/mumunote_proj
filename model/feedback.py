@@ -118,6 +118,16 @@ class Feedback(Base):
         # db_session.refresh()
         return feedback
 
+    def insert_reply(self,user_id,article_id,content,ipaddr,reply_id,base_reply_id):
+        feedback = Feedback(user_id=user_id,
+                            article_id=article_id,
+                            content=content,
+                            ipaddr=ipaddr,
+                            reply_id=reply_id,
+                            base_reply_id=base_reply_id)
+        db_session.add(feedback)
+        db_session.commit()
+
 
 
 
