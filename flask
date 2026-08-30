@@ -1,0 +1,1339 @@
+main.py        负责启动
+app/app.py     负责创建 Flask 应用
+config/        负责配置
+controller/    负责路由
+model/         负责数据库模型
+template/      负责页面模板
+resource/      负责静态资源
+
+
+app/app.py 负责创建 Flask 应用
+封装 Flask app 的创建过程。
+def create_app():
+    app = Flask(...)
+    return app
+
+main.py 只负责启动项目
+from app.app import create_app
+
+app = create_app()
+
+意思是：从 app/app.py 里面导入 create_app() 函数，然后创建 Flask 应用对象。
+
+
+app = Flask(
+    __name__,
+    template_folder="../template",
+    static_url_path="/",
+    static_folder="../resource"
+)
+
+意思是创建 Flask 应用，并指定模板和静态资源的位置
+
+<link rel="stylesheet" href="/css/index.css">
+
+如果你没有改 static_url_path，用默认 /static，那 HTML 里写：
+
+<link rel="stylesheet" href="/static/css/index.css">
+
+本质都是：浏览器请求 CSS 文件，不是页面跳转
+
+
+里面放所有环境都可能共用的配置，比如数据库地址
+class Config(object):
+    db_url = "mysql+pymysql://admin1:123@192.168.1.129:3306/mumushouji"
+
+
+# 测试环境
+class TestConfig(Config):
+    # db_url = ""
+    if_echo=True 通常是给 SQLAlchemy 用的，意思是：打印 SQL 执行日志。
+    if_echo = True
+
+
+class ProductionConfig(Config):
+    意思是上线后不要打印大量 SQL 日志。
+    if_echo = False
+
+它的意思是：先定义一个公共配置 Config，然后让不同环境的配置类继承它
+
+
+config = {
+    "test": TestConfig,
+    "production": ProductionConfig
+}
+
+这个字典的作用是：通过字符串选择不同环境的配置类
+比如：
+
+config["test"]
+
+拿到的是：
+
+TestConfig
+
+
+env = "test"
+
+这句是在指定当前运行环境。
+
+
+def db_connect():
+    # 创建一个引擎，目的是连接到我们的数据库上
+    config_class = config[env]
+    print(config_class)
+    engine = create_engine(config_class.db_url,echo=config_class.if_echo,pool_size=10,max_overflow=30)
+    # 打开数据库的连接会话
+    session = sessionmaker(engine,autoflush=False)
+    # 保证线程安全
+    db_session = scoped_session(session)
+    # 获取基类
+    Base = declarative_base()
+    return db_session,Base,engine
+
+
+
+from sqlalchemy import Table
+
+from common.database import db_connect
+
+db_session, Base, engine = db_connect()
+
+
+class User(Base):
+    # 表结构的反射加载
+    __table__ = Table("user", Base.metadata, autoload_with=engine)
+1. 连接数据库
+2. 拿到 db_session、Base、engine
+3. 定义 User 类
+4. 用 Table("user", ..., autoload_with=engine) 自动读取数据库中的 user 表结构
+5. 以后就可以用 User 这个类操作 user
+
+class User(Base):
+    # 表结构的反射加载
+    __table__ = Table("user", Base.metadata, autoload_with=engine)
+
+    def get_one(self):
+    查询 user 表中的第一条用户数据。
+        return db_session.query(User).first()
+
+
+def create_app():
+    app = Flask(__name__,template_folder="../template",static_url_path="/",static_folder="../resource")
+    # 注册蓝图
+    init_blueprint(app)
+    app.config['SECRET_KEY'] = os.urandom(24)
+    return app
+
+def init_blueprint(app):
+    from controller.user import user
+
+    user 蓝图注册到 Flask 主应用 app 上
+    没有这一步，@user.route("/") 是不会真正生效的
+    app.register_blueprint(user)
+
+
+main.py 启动
+↓
+调用 create_app()
+↓
+创建 Flask app
+↓
+执行 init_blueprint(app)
+↓
+导入 controller.user 里的 user 蓝图
+↓
+app.register_blueprint(user)
+↓
+用户访问 http://127.0.0.1:5000/
+↓
+执行 @user.route("/") 下面的 get_one()
+
+
+日志配置
+
+给项目配置日志系统，把运行信息写到日志文件里。  
+
+Logger
+负责“产生/管理日志”
+
+Handler
+负责“日志去哪儿”
+
+Formatter
+负责“日志长什么样”
+
+# 增加日志的配置
+def set_log():
+    config_class = config[env]
+
+    # 设置日志的等级
+    logging.basicConfig(level=config_class.LOG_LEVEL)
+
+    # 创建日志记录器 ,指定日志的保存路径、每个日志文件的最大大小、保存的日志个数
+    写到 log/mumunote.log 文件里
+    一个日志文件最大 300MB
+    最多保存 10 个历史日志文件
+    file_log_handler = RotatingFileHandler("log/mumunote.log",maxBytes=1024*1024*300,backupCount=10)
+
+    # 创建日志记录的格式
+    formatter = logging.Formatter("%(asctime)s:%(levelname)s:%(filename)s:%(lineno)d %(message)s")
+    把刚创建的文件日志处理器挂到整个日志系统上。
+    file_log_handler.setFormatter(formatter)
+    # 为全局的日志工具对象添加日志记录器
+    logging.getLogger().addHandler(file_log_handler)
+
+%(asctime)s
+↓
+时间
+
+%(levelname)s
+↓
+日志等级
+
+%(filename)s
+↓
+哪个 Python 文件
+
+%(lineno)d
+↓
+第几行
+
+%(message)s
+↓
+你真正写的日志内容
+2026-08-14 12:10:20:INFO:user.py:35 用户登录成功
+
+严重程度就是：
+
+DEBUG
+  ↓
+INFO
+  ↓
+WARNING
+  ↓
+ERROR
+  ↓
+CRITICAL
+比这个级别轻的不要，比它严重或相等的留下。
+
+import common 不只是“拿东西进来”，Python 第一次导入这个包时，还会执行它的 __init__.py
+
+根据用户传进来的 page 和 article_type，去数据库里查文章，并且连着用户表一起查，把作者昵称也拿出来。
+    def find_article(self,page,article_type="recommend"):
+        #     一页显示多少内容呢,我们默认为一个10,page默认应该是从1开始
+        if int(page) < 1:
+            page = 1
+        count = int(page) * config[env].page_count
+        # 这就证明是来到了推荐的分类下边
+        if article_type == "recommend":
+            result = db_session.query(Article,User.nickname).join(
+                User,User.user_id==Article.user_id
+            ).filter(
+                Article.drafted==1
+            ).order_by(
+                Article.browse_num.desc()
+            ).limit(count).all()
+        else:
+            result = db_session.query(Article,User.nickname).join(
+                User, User.user_id == Article.user_id
+            ).filter(
+                Article.label_name == article_type,
+                Article.drafted==1
+            ).order_by(
+                Article.browse_num.desc()
+            ).limit(count).all()
+        return result
+
+
+
+article.create_time = str(article.create_time.month) + '.' + str(article.create_time.day)
+拿到月份，并转成字符串 然后重新赋值
+
+common 这个目录一般放的是：很多地方都会用到的公共代码。
+
+为什么数据库连接放 common？
+
+因为数据库连接不是只给 user.py 用，也不是只给 article.py 用
+
+# 设置日志的输出格式
+LOG_FORMAT = "%(asctime)s - %(levelname)s  - %(message)s"
+DATE_FORMAT = "%Y/%m/%d %H:%M:%S "
+logging.basicConfig(filename='my.log',
+                    level=logging.DEBUG,
+                    format=LOG_FORMAT,
+                    datefmt=DATE_FORMAT,
+                    encoding="UTF-8")
+
+logging.debug("这是调试级别的日志")
+logging.info("这是详情级别的日志")
+logging.warning("这是警告级别的日志")
+logging.error("这是错误级别的日志")
+
+filename='my.log'
+
+日志不打印到控制台，而是写入到当前目录下的：
+
+my.log
+
+level=logging.DEBUG
+
+设置最低输出级别是 DEBUG
+
+format=LOG_FORMAT
+
+控制每条日志长什么样。
+datefmt=DATE_FORMAT
+
+控制时间的格式
+
+encoding="UTF-8"
+
+因为你日志里有中文，所以必须指定 UTF-8，
+
+Python 的 logging 默认用的是同一个“全局日志系统”。
+
+
+log_settings.py
+
+负责配置日志规则
+
+my_db.py
+
+只负责使用日志
+
+ logger = logging.getLogger()
+    logger.setLevel(print_level)
+
+ # 文件处理器，把所有的日志信息输出到文件中
+    file_handler = logging.FileHandler("info.log",mode="a",encoding="UTF-8")
+    logger.addHandler(file_handler)
+
+    # 流处理器，把信息输出到控制台中
+    stream_handler = logging.StreamHandler()
+    logger.addHandler(stream_handler)
+
+    # 把错误日志单独输出到一个错误的文件当中
+    error_handler = logging.FileHandler("error.log",mode="a",encoding="UTF-8")
+    error_handler.setLevel(logging.ERROR)
+    logger.addHandler(error_handler)
+INFO 过了 logger 的 DEBUG 总门槛
+但是没过 error_handler 的 ERROR 门槛
+所以不会进 error.log
+
+    formatter = logging.Formatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT)
+    file_handler.setFormatter(formatter)
+    stream_handler.setFormatter(formatter)
+    error_handler.setFormatter(formatter)
+
+
+FileHandler("info.log", mode="a", encoding="UTF-8")
+mode="a"  # 追加，日志常用
+mode="w"  # 覆盖，调试时偶尔用
+每次程序启动都会清空旧日志，重新写。
+
+一直往 info.log 里追加写，文件会越来越大，不会自动分割
+file_log_handler = RotatingFileHandler(
+    "log/mumunote.log",
+    maxBytes=1024*1024*300,
+    backupCount=10
+)
+日志先写到 log/mumunote.log，当这个文件超过 300MB，就自动切一个新文件，并最多保留 10 个历史日志文件。
+不用手动起新文件名，RotatingFileHandler 会自动帮你命名。
+
+
+
+redis-cli
+select 0
+keys *
+set project mumushouji
+get project
+del project
+keys *
+set name dazhoulaoshi
+keys *
+get name
+setnx name dazhou
+get name
+
+指令	作用
+redis-cli	进入 Redis 命令行客户端
+select 0	选择第 0 号数据库
+keys *	查看当前数据库所有 key
+set project mumushouji	设置一个字符串：project = mumushouji
+get project	获取 project 的值
+del project	删除 project
+set name dazhoulaoshi	设置一个字符串：name = dazhoulaoshi
+get name	获取 name 的值
+setnx name dazhou	只有当 name 不存在时才设置
+get name	再次查看 name 的值
+
+
+flushdb	清空当前数据库	危险
+flushall	清空所有数据库	非常危险
+mset name dazhou age 18 city beijing	一次设置多个 key-value	安全
+mget name age city	一次获取多个 key 的值
+
+select 0
+
+set code 1888 ex 10
+
+这条非常重要，意思是：
+
+设置 key = code
+value = 1888
+过期时间 = 10秒
+
+
+ttl code
+
+你问的 ttl 就是看一个 key 还剩多久过期。
+
+ttl code
+
+可能返回：
+
+(integer) 8
+
+意思是：code 还剩 8 秒过期
+
+(integer) -1
+永不过期
+
+(integer) -2
+不存在了
+
+getrange name 1 3
+意思是截取字符串 name 的一部分
+
+incr age	age 加 1
+decr age	age 减 1
+
+hset user name dazhoulaoshi age 18
+含义是创建一个名为 user 的 Hash：
+
+hset：设置 Hash 中的字段
+user：Redis 键名
+name、age：字段名
+dazhoulaoshi、18：字段值
+返回 (integer) 2：这次新增了两个字段
+
+hget user age
+表示：从名为 user 的 Hash 中，获取 age 字段
+
+hget user name
+
+hgetall user
+表示获取 user 中的所有字段和值，Redis 按“字段、值”交替返回
+
+
+type city
+返回：
+string
+意思是：city 这个 key 在 Redis 里是字符串类型
+
+
+hsetnx user name laoshihao
+返回：
+(integer) 0
+hsetnx 的意思是：只在字段不存在时才设置。
+这里 user 里面已经有 name 字段了，所以不会把原来的 name 改成 laoshihao，返回 0 表示设置失败/没有修改。
+
+hgetall datainfo
+就是查看 datainfo 这个 hash 里的全部字段和值。返回结果是成对出现的：
+
+hmset datainfo name imooc createTime 2040-12-12-12
+意思是创建或更新一个 hash key，叫 datainfo，里面放两个字段
+
+返回 OK 表示成功。
+然后：
+keys *
+
+HLEN user
+返回 2，表示 user 中有两个字段：name 和 age
+
+HINCRBY user age 2
+将 age 增加 2，所以返回 20。Redis 中虽然显示为字符串 "20"，但只要内容是整数，就可以执行数值增减
+
+HEXISTS user age
+检查字段是否存在：返回 1 表示存在，0 表示不存在
+
+HKEYS user
+返回所有字段名
+
+HVALS user
+返回所有字段值：
+
+HDEL datainfo name
+返回 1，表示成功删除了 datainfo 中的 name 字段。
+
+如果要删除整个 Hash，直接删除它的 key：
+DEL user
+
+LPUSH userList 1 5 4 2 3
+多个值会依次从左侧压入，因此最终列表是：
+[3, 2, 4, 5, 1]
+RPUSH dataInfo user1 user3 user3 user4 user5
+从右侧依次添加，结果是：
+[user1, user3, user3, user4, user5]
+
+
+查看元素
+LRANGE key start stop
+获取指定范围，左右下标都包含：
+LRANGE userList 0 0   # 第一个元素
+LRANGE userList 0 1   # 前两个元素
+LRANGE userList 0 -1  # 整个列表，最常用
+下标从 0 开始；-1 表示最后一个元素。结束下标超过列表长度也不会报错。
+
+LPOP key   # 删除并返回最左侧元素
+RPOP key   # 删除并返回最右侧元素
+
+
+LSET userList 0 user1
+把下标 0 的元素修改成 user1
+
+在指定元素附近插入
+LINSERT key BEFORE|AFTER pivot value
+例如：
+LINSERT dataInfo BEFORE user1 user0
+在第一个 user1 前插入 user0。
+LINSERT dataInfo AFTER user3 user6
+在第一个 user3 后插入 user6
+
+正数：插入后列表的长度。
+-1：没有找到作为参照物的 pivot。
+0：key 不存在。
+
+返回列表元素数量：
+LLEN dataInfo
+(integer) 6
+
+删除指定值
+LREM key count value
+截图中：
+LREM dataInfo 1 user3
+表示从左向右删除第一个 user3，返回 1 代表实际删除了一个。
+
+从左向右删除前 2 个 a。
+LREM list -2 a
+从右向左删除前 2 个 a。
+
+SMEMBERS myset
+意思是：查看 set 里面所有元素。
+
+这个顺序不是插入顺序。
+因为 set 是无序的，Redis 只是把元素都拿出来，不保证顺序
+
+
+SCARD myset
+意思是：查看 set 里面有多少个元素。
+
+(integer) 6
+说明 myset 里面现在有 6 个元素。
+
+
+SISMEMBER myset s1
+
+意思是：判断 s1 在不在 myset 里面。
+
+1 = 存在
+0 = 不存在
+
+SPOP myset 1
+
+意思是：从 set 里面随机弹出 1 个元素，并且删除它
+
+SREM myset s3 s4
+意思是：从 myset 里面删除 s3 和 s4
+说明成功删除了 2 个元素。
+
+如果你删的元素不存在，它不会报错，只是返回成功删除了几个
+
+SINTER s1 s2
+意思是：求 交集。
+
+也就是：s1 和 s2 都有的元素。
+
+意思是：求 并集。
+SUNION s1 s2
+也就是：s1 和 s2 所有元素合在一起，自动去重
+SUNION s1 s2
+
+SDIFF s1 s2
+s1 里面有，但 s2 里面没有的元素
+
+
+
+zadd myzset 10 v1 20 v2 30 v3 50 v4 40 v5
+
+member：元素，比如 v1
+score：分数，比如 10
+Redis 会按照 score 从小到大自动排序
+
+查看全部元素
+zrange myzset 0 -1
+
+ZRANGE 就是：
+
+按照 score 从小到大取出元素。
+
+
+同时查看 score
+zrange myzset 0 2 withscores
+
+
+zrange myzset 0 2
+
+只显示元素：
+
+zrank myzset v3
+
+作用是：
+
+查看 v3 在有序集合里排名第几
+
+ZRANK = 0
+
+ZADD key score member       # 添加元素和分数
+
+ZRANGE key 0 -1             # 查看全部，score从小到大
+
+ZRANGE key 0 2              # 查看前3个
+
+ZRANGE key 0 -1 WITHSCORES  # 查看全部，并显示score
+
+ZRANK key member            # 查看某元素排名，从0开始
+
+zscore myzset v1 → "10"
+作用：查看成员 v1 的分数。
+结果：v1 的分数是 10
+
+
+zcard myzset → (integer) 5
+作用：返回集合的成员总数。
+结果：集合里共有 5 个成员
+
+zrem myzset v1 → (integer) 1
+作用：删除成员 v1。
+结果：1 表示成功删除了 1 个。
+
+zrangebyscore myzset 10 30
+作用：按分数范围查询成员，返回分数在 10 到 30 之间（含边界）的所有成员
+
+
+pool = redis.ConnectionPool(host='192.168.1.129',port=6379,db=1,decode_responses=True)
+db=1 的意思是：连接 Redis 的第 1 号数据库。
+
+Redis 默认有多个逻辑数据库，编号一般是：
+
+0, 1, 2, 3 ... 15
+
+也就是默认有 16 个库
+
+pool = redis.ConnectionPool(host='192.168.1.129',port=6379,db=1,decode_responses=True)
+redis_client = redis.Redis(connection_pool=pool)
+用前面创建好的连接池 pool 
+创建一个 Redis 客户端。之后所有 Redis 操作都通过 redis_client 执行。
+
+redis_client.set("name","大周老师")  # 单独设置一个值
+print(redis_client.get("name"))
+
+redis_client.mset({"age":18,"address":"北京"})
+print(redis_client.mget("name","age","address"))  # 我们同时获取多个值的时候，这里返回的是列表类型
+print(redis_client.exists("name"))  # 存在是1，不存在是0
+print(redis_client.exists("myname"))
+
+print(redis_client.get("myname"))
+print(redis_client.dbsize())
+print(redis_client.lastsave())
+set     -> 设置一个 key
+get     -> 获取一个 key
+mset    -> 一次设置多个 key
+mget    -> 一次获取多个 key，返回 list
+exists  -> 判断 key 是否存在，存在 1，不存在 0
+dbsize  -> 当前库 key 的数量
+lastsave -> Redis 最近一次保存到磁盘的时间
+
+
+redis_client.hset(name="userHash", key="username", value="dazhoulaoshi")
+这是给一个 Hash 增加一个字段：
+
+redis_client.hset(
+    name="userHash2",
+    mapping={
+        "username": "大周老师",
+        "password": "123456",
+        "nickname": "大大",
+        "address": "北京"
+    }
+)
+是一次性往 userHash2 这个 Hash 里加入多个字段：
+
+print(redis_client.hget("userHash2", "username"))
+是获取 某一个字段的值：
+
+
+print(redis_client.hgetall("userHash2"))
+是获取整个 Hash 里的 所有字段和值。
+
+
+redis_client.llen("numberRight")
+获取 Redis 中 numberRight 这个 List 的长度
+
+
+redis_client.lindex("numberRight", i)
+lindex 是按照下标获取 List 元素。
+
+redis_client.sadd("setNum", 11, 12, 13, 14)
+SADD 可以一次添加多个元素。
+
+
+smembers() 是：
+
+获取一个 Set 中的所有成员。
+
+set_number = redis_client.smembers("setNum")
+
+遍历 Set 里面的每一个元素
+
+for i in set_number:
+    print(i)
+
+
+redis_client.zadd("myzset",{"v1":10,"v2":20,"v3":30})
+意思是往 myzset 里加入 3 个成员，每个成员都有一个 score：
+
+r = redis_client.zrangebyscore("myzset",20,30)
+查询 score 在 20 到 30 之间的成员
+print(r)
+
+r = redis_client.zrangebyscore("myzset",20,30,withscores=True)
+withscores=True 表示：
+除了成员，还把它对应的 score 一起返回。
+print(r)
+
+# 差具体成员的索引值，或者叫排名也行
+print(redis_client.zrank("myzset","v1"))
+zrank() 是查看某个成员的排名/索引。
+
+
+滚到底了
+if (clientHeight + scrollTop >= scrollHeight && allowRequest) {
+    console.log("开始向后端请求数据，重新渲染页面");
+}
+
+location.search 会获取 URL 中从 ? 开始的部分
+uri.indexOf("?") 
+意思就是：
+
+找得到 ?。
+substr(1) 表示：
+
+从下标 1 开始截取
+
+startNum == endNum：已经到底了，没有新数据。
+
+
+            滚到底
+               ↓
+        windowScroll()
+               ↓
+        getUrlParams()
+               ↓
+    当前 page=2,start_num=10
+               ↓
+        toNextPage()
+               ↓
+      page=3,start_num=20
+               ↓
+       location.href
+               ↓
+         请求 Flask
+               ↓
+       find_article(3)
+               ↓
+          limit(30)
+               ↓
+       返回前30条文章
+               ↓
+startNum=20，endNum=30
+               ↓
+        页面重新渲染
+               ↓
+       自动滚回靠下位置
+               ↓
+         等下一次滚到底
+
+第一次进入页面
+↓
+page = 1
+↓
+后端 find_article(1)
+↓
+limit(10)
+↓
+页面显示前 10 条
+↓
+用户往下滚
+↓
+scroll 事件触发 windowScroll()
+↓
+判断是否滚到底
+↓
+getUrlParams()
+↓
+拿到当前参数
+↓
+toNextPage(params)
+↓
+page + 1
+start_num = 上一次 endNum
+↓
+拼出新 URL
+?page=2&...&scroll=1
+↓
+location.href = url
+↓
+浏览器重新请求 Flask
+↓
+后端收到 page=2
+↓
+find_article(2)
+↓
+limit(20)
+↓
+返回前 20 条
+↓
+重新 render_template
+↓
+页面变成 20 条文章
+↓
+检测 URL 有 scroll=1
+↓
+window.scrollTo(...)
+↓
+自动滚回页面下方
+↓
+等待下一次滚到底
+
+engine = create_engine(
+    config_class.db_url,
+    echo=config_class.if_echo
+)
+
+只是告诉 SQLAlchemy：
+
+连接哪个数据库
+要不要打印 SQL
+
+
+程序提前维护一批数据库连接，需要查询时直接拿来用，用完放回去，而不是每次都重新连接 MySQL。
+
+engine = create_engine(
+    config_class.db_url,
+    echo=config_class.if_echo,
+    pool_size=10,
+    max_overflow=30
+)
+
+pool_size=10 表示：
+
+连接池平时最多保留 10 个常驻连接。
+
+除了正常的 10 个连接之外，压力大时最多还能临时额外创建 30 个连接之外
+
+搜索后向下翻页
+用户输入 Flask
+↓
+search_article()
+↓
+location.href = "?keyword=Flask"
+↓
+后端搜索文章
+↓
+页面显示前10条搜索结果
+↓
+用户滚到底
+↓
+windowScroll()
+↓
+getUrlParams()
+
+
+
+所有大小写字母 + 数字
+        ↓
+随机选4个
+        ↓
+['a', 'G', '3', 'k']
+        ↓
+"".join(...)
+        ↓
+"aG3k"
+        ↓
+return
+
+
+生成验证码，例如：
+
+code = "aG3k"
+
+        ↓
+
+创建 80×38 白色图片
+
+        ↓
+
+加载 Arial 20号字体
+
+        ↓
+
+创建 draw 画笔
+
+        ↓
+
+循环4次
+
+i=0 → 画 a
+i=1 → 画 G
+i=2 → 画 3
+i=3 → 画 k
+
+        ↓
+
+每个字符：
+横坐标稍微随机
+纵坐标稍微随机
+颜色随机
+
+        ↓
+
+最终得到一张类似：
+
+   a  G
+      3  k
+
+的验证码图片
+
+
+15*i 负责让每个字符向右排开，random.randint(3,10) 负责让位置产生随机偏移。
+
+BytesIO() 就是在内存里临时造一个“假文件
+buf = BytesIO()
+相当于：
+
+给我在内存里弄一个临时文件，我先把图片塞进去
+
+
+image.save("code.jpg")
+
+
+这会真的在硬盘生成一个 code.jpg。
+
+但验证码这种图片通常没必要真的存硬盘，所以写：
+
+image_b_string = buf.getvalue()
+
+就是把里面的图片数据拿出来，变成 bytes：
+
+
+这样后端就能直接把图片数据发给浏览器。
+
+告诉浏览器：这是 JPEG 图片
+response.headers["Content-Type"] = "image/jpeg"
+兄弟，我发给你的这些二进制数据是一张 JPEG 图片，你按图片显示。
+
+<img src="/vcode">
+浏览器就能直接把验证码显示出来。
+
+HTML：
+
+<img src="/vcode">
+
+        ↓
+
+浏览器请求：
+
+GET /vcode
+
+        ↓
+
+Flask：
+
+vcode()
+
+        ↓
+
+ImageCode().get_code()
+
+        ↓
+
+生成：
+
+code = "A3k8"
+图片 = [A 3 k 8]
+
+        ↓
+
+图片转成二进制：
+
+bstring
+
+        ↓
+
+make_response(bstring)
+
+        ↓
+
+告诉浏览器：
+
+Content-Type = image/jpeg
+
+        ↓
+
+偷偷保存正确答案：
+
+session["vcode"] = "a3k8"
+
+        ↓
+
+return response
+
+        ↓
+
+浏览器显示验证码图片
+
+
+Flask 的 session：
+
+session['vcode'] = code.lower()
+
+而 Flask 的 session 需要 SECRET_KEY 才能工作。
+
+SECRET_KEY 理解成：
+
+Flask 用来给 session 数据“盖防伪章”的一把秘密钥匙。
+
+session 数据
++
+SECRET_KEY
+↓
+生成防伪签名
+↓
+发给浏览器
+防止数据篡改
+
+
+/vcode?0.583721
+
+如果一直请求完全一样的：
+
+/vcode
+
+浏览器有可能认为：
+
+这张图片我刚才已经下载过了，我直接用缓存吧。
+
+所以作者故意加一个随机数：
+
+onclick="this.src='/vcode?'+Math.random()"
+用户点击这张图片的时候，重新修改这张 <img> 的 src。
+
+页面加载
+↓
+src="/vcode"
+↓
+请求后端生成验证码
+↓
+显示验证码图片
+
+
+用户觉得看不清
+↓
+点击验证码
+↓
+onclick
+↓
+this.src="/vcode?随机数"
+↓
+浏览器认为是新地址
+↓
+重新请求 /vcode
+↓
+后端生成新验证码
+↓
+显示新图片
+
+random.sample(..., 6)
+从这些字符里随机抽 6 个，而且这 6 个不会重复
+
+"".join(list)
+把这个列表拼成一个字符串
+
+
+request.json.get("email")
+
+拿的是 JSON 请求体，正好对应你现在这种 Axios
+
+axios.post("/ecode", {
+    email: targetEmail
+})
+json post 请求体
+
+
+axios.post("/ecode",{ 
+    email: targetEmail 
+}).then((res)=>{ 
+    console.log(res); 
+    alert("向后端发送验证码成功"); 
+
+    times = 5; 
+    countDown(sendEmailButton, times); 
+})
+.then() 负责请求回来后启动倒计时。
+
+
+
+点了发送以后，按钮先禁用，显示 5、4、3、2、1、0；每秒减 1；到 0 后按钮恢复可点击，并显示“发送”。
+function countDown(sendEmailButton,times){
+	sendEmailButton.disabled=true;
+	sendEmailButton.innerHTML=times;
+	if(times > 0){
+		times = times-1;
+		setTimeout(function(){
+			countDown(sendEmailButton,times)
+		},1000)
+	}else{
+		// 到了0秒了，那么一切还原
+		sendEmailButton.disabled=false;
+		sendEmailButton.innerHTML="发送";
+	}
+	
+}
+等 1000 毫秒，也就是 1 秒，再重新执行一次 countDown()。
+
+这两行是在做两件事：先把用户密码做 MD5 处理，再把用户名和处理后的密码交给注册方法写入数据库
+
+password = hashlib.md5(password.encode()).hexdigest()
+
+do_register() 方法是在做：真正把一个新用户创建出来并写进数据库
+
+注册时随机给用户分配一张默认头像
+创建一个新的 User ORM 对象
+
+db_session.add(user)
+db_session.commit()
+把这个新用户加入 SQLAlchemy 当前事务，告诉它“这个对象等下要插入数据库”
+
+正式提交事务，把用户真正写入数据库
+把刚刚创建成功的 User 对象返回给调用者
+
+如果你不这样保存，会怎么样？最直接的后果就是：后续页面不知道当前是谁登录了。
+
+# 需要进行登录状态的管理
+        session["is_login"] = "true"
+        session["user_id"] = result[0].user_id
+        session["username"] = username
+        session["nickname"] = result[0].nickname
+        session["picture"] = config[env].user_header_image_path + result[0].picture
+
+登录成功
+↓
+生成：
+
+{
+  status:1000,
+  data:"登录成功"
+}
+
+↓
+make_response()
+↓
+得到 response
+↓
+response.set_cookie(...)
+↓
+告诉浏览器保存 username
+保存30天
+↓
+return response
+↓
+浏览器收到响应
+↓
+保存 Cookie
+
+request_data = json.loads(request.data)
+email = request_data.get("email")
+
+request_data = request.get_json()
+email = request_data.get("email")
+
+email = request.json.get("email")
+
+request.data
+↓
+原始请求数据
+
+json.loads(request.data)
+↓
+自己把 JSON 转成 Python 对象
+
+request.get_json()
+↓
+Flask 帮你把 JSON 转成 Python 对象
+
+request.json
+↓
+Flask 已经解析好的 JSON 对象
+
+request.json.get("email")
+↓
+直接从 JSON 里面拿 email
+
+
+注销流程
+用户点击：
+
+<a href="/logout">注销</a>
+
+        ↓
+
+浏览器请求：
+
+GET /logout
+
+        ↓
+
+@user.route("/logout")
+
+        ↓
+
+session.clear()
+清除登录状态
+
+        ↓
+
+创建 302 response
+
+        ↓
+
+Location = url_for("index.home")
+告诉浏览器跳回首页
+
+        ↓
+
+delete_cookie("username")
+删除用户名 Cookie
+
+        ↓
+
+return response
+
+        ↓
+
+浏览器自动跳转到首页
+
+        ↓
+
+首页重新渲染
+
+        ↓
+
+session 已经没有 is_login
+
+        ↓
+
+显示：
+
+登录 / 注册
+
+url_for("index.home")
+意思是：
+
+“找到 index 蓝图里的 home 函数对应的 URL
+
+
+# @todo: 增加用户头像上传功能
+“这里以后还有事情要做。
+
+target="_blank"
+
+这个意思是：
+
+点击后在新的浏览器标签页打开
+
+{{article_content.article_content | safe}}
+把文章正文取出来，并且告诉 Jinja2：“这里面的 HTML 标签是可信的，直接当 HTML 渲染，不要把它当普通文字显示。
+
+add() 一般最常见的用途是新增对象。
+
+feedlist 所有的一级 遍历feedback list 
+文章一级评论
+
+allreply 所有 回复 
+
+遍历回复
+
+回复的用户信息
+被回复的用户信息
+
+一级评论的用户信息
+
+
+string format time
+
+意思：
+
+按指定格式，把时间变成字符串
+strftime()
+
+float
+→ 用浮动让元素左右排列
+
+inline-block
+→ 不用浮动，也能让元素像行内元素一样横向排列，同时还能设置宽高
+
+
+var ue = UE.getEditor('editor')
+
+意思是：
+
+把 id="editor" 的那个元素变成 UEditor 富文本编辑器。
+
+<div id="editor"></div>
+
+那么 UEditor 就会挂到这个 div 上。
+
+
+def compress_image(source, dest, width=1200):
+source：原图片放在哪里。
+dest：压缩后的图片保存在哪里。
+width=1200：图片最大宽度默认是1200像素
+
+
+temp = im.resize((xs, ys), Image.ANTIALIAS)
+把图片调整成计算好的尺寸。
+Image.ANTIALIAS 的作用是让缩小后的图片看起来更平滑，不容易出现锯齿。
+
+把缩小后的图片保存到 dest。
+quality=80 表示图片质量为80，通常可以在清晰度和文件大小之间取得平衡：
+数字越高：越清晰，文件越大。
+数字越低：越模糊，文件越小。
+
+
+article-info.js
+→ 管编辑器界面和初始化
+
+FEEDBACK_UECONFIG
+→ 管图片、视频、附件上传规则
+
+/feedback 接口
+→ 真正接收和保存文件
+
+time.strftime 的作用很简单：把“当前时间”按照你指定的格式，变成一段字符串。
+比如：
+time.strftime("%Y%m%d_%H%M%S")
+2026年8月27日 19:40:35
+得到：
+20260827_194035
