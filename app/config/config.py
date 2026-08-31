@@ -1,6 +1,6 @@
 # 全局通用配置
 class Config(object):
-    db_url = "mysql+pymysql://admin1:123@192.168.1.129:3306/mumushouji"
+    db_url = "mysql+pymysql://root:20040620Deng@127.0.0.1:3306/mumushouji?charset=utf8mb4"
     page_count = 10
     article_header_image_path = "/images/article/header/"
     user_header_image_path = "/images/headers/"
