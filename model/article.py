@@ -14,7 +14,7 @@ class Article(Base):
     def find_article(self,page,article_type="recommend"):
         if int(page) < 1:
             page = 1
-        count = int(page) * config[env].password
+        count = int(page) * config[env].page_count
 
         if article_type == "recommend":
             result = db_session.query(Article, User.nickname).join(
